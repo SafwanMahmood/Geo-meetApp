@@ -1,1 +1,1 @@
-# Geo-meetApp
+# Geo-Meet

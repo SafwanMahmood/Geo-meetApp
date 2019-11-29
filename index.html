@@ -1,0 +1,533 @@
+<html>
+<head><meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+
+<script
+        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBr7DVrKhFlYQaFcZi29G2J_u-TUh6HNs4&libraries=places">
+        </script>
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+<script
+        src="./node_modules/jquery-clock-timepicker/jquery-clock-timepicker.min.js">
+
+</script>
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+.loader {
+  border: 16px solid #f3f3f3;
+  border-radius: 50%;
+  border-top: 16px solid #3498db;
+  width: 120px;
+  height: 120px;
+  -webkit-animation: spin 2s linear infinite; /* Safari */
+  animation: spin 2s linear infinite;
+}
+
+/* Safari */
+@-webkit-keyframes spin {
+  0% { -webkit-transform: rotate(0deg); }
+  100% { -webkit-transform: rotate(360deg); }
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+</style>
+        </head>
+<body>
+    <script type="text/javascript">
+        var sock = null;
+        var wsuri = "ws://127.0.0.1:1234";
+        var myLatitude = "";
+        var myLongitude = "";
+
+        function getTime(time){
+            var days = Math.floor(time/86400);
+            var time = time%86400;
+            var minutes = Math.floor((time%3600)/60);
+            var hours = Math.floor(time/3600);
+            var minutes_string = minutes.toString();
+            var hours_string = hours.toString();
+            if(hours_string.length == 1){
+                hours_string = '0'+hours_string;
+            }
+            if(minutes_string.length == 1){
+                minutes_string = '0'+minutes_string;
+            }
+            return  "days:"+days+","+hours_string+":"+minutes_string;
+        }
+
+        window.onload = function() {
+
+            console.log("onload");
+
+            sock = new WebSocket(wsuri);
+            var map = new google.maps.Map(document.getElementById('map'), {
+                            zoom: 2,
+                            center: new google.maps.LatLng(17.619416, 78.082308),
+                            mapTypeId: google.maps.MapTypeId.ROADMAP
+                        });
+            sock.onopen = function() {
+                console.log("connected to " + wsuri);
+            }
+
+            sock.onclose = function(e) {
+                console.log("connection closed (" + e.code + ")");
+            }
+
+            sock.onmessage = function(e) {
+                var obj = JSON.parse(e.data);
+                if(obj.type == 'groupID'){
+                    document.getElementById('groupID_text').innerHTML = obj.data;
+                    document.getElementById('CG_groupsize_text').innerHTML = obj.groupsize;
+                    document.getElementById('CG_groupsize_text').style.display = "inline";
+                    document.getElementById('CG_latitude_text').innerHTML = obj.lat;
+                    document.getElementById('CG_longitude_text').innerHTML = obj.lng;
+                    document.getElementById('CG_groupsize').style.display = "none";
+                    document.getElementById('CG_lat').style.display = "none";
+                    document.getElementById('CG_lng').style.display = "none";
+                    document.getElementById('groupID').style.display = "block";
+                    document.getElementById('submitCGButton').style.display = "none";
+                    document.getElementById('CG_departure_time').style.display = "none";
+                    document.getElementById('CG_departure_time_text').innerHTML = obj.time;
+                    document.getElementById('CG_meeting_place_text').innerHTML = obj.place;
+                    document.getElementById('CG_meeting_place').style.display = "none";
+                }
+                else if(obj.type == 'JG'){
+                    if(obj.error == null){
+                        console.log("join group validation successfull");
+                        document.getElementById('JG_latitude_text').innerHTML = obj.lat;
+                        document.getElementById('JG_longitude_text').innerHTML = obj.lng;
+                        document.getElementById('JG_id_text').innerHTML = obj.groupID;
+                        document.getElementById('JG_lat').style.display = "none";
+                        document.getElementById('JG_lng').style.display = "none";
+                        document.getElementById('JG_id').style.display = "none";
+                        document.getElementById('submitJGButton').style.display = "none";
+                        document.getElementById('JG_departure_time').style.display = "none";
+                        document.getElementById('JG_departure_time_text').innerHTML = obj.time;
+                    } else{
+                        console.log("join group validation not successfull");
+                        document.getElementById('group_id_error').innerHTML = obj.error;
+                        document.getElementById('loading').style.display="none";
+                        document.getElementById('map').style.display = 'block';
+                        document.getElementById('JG_id').classList.add('error_input');
+                    }
+                } else if(obj.type == 'LC'){
+                    if(obj.error == null){
+                        document.getElementById('loading').style.display="none";
+                        document.getElementById('map').style.display = 'block';
+                        console.log(document.getElementById('map').style.display);
+
+                        var infowindow = new google.maps.InfoWindow();
+                        console.log(obj.message);
+                        var map = new google.maps.Map(document.getElementById('map'), {
+                            zoom: 10,
+                            center: new google.maps.LatLng(obj.message['geometry']['location'].lat, obj.message['geometry']['location'].lng),
+                            mapTypeId: google.maps.MapTypeId.TERRAIN
+                        });
+                        marker = new google.maps.Marker({
+                            position: new google.maps.LatLng(obj.message['geometry']['location'].lat, obj.message['geometry']['location'].lng),
+                            map: map
+                        });
+
+                        google.maps.event.addListener(marker, 'click', (function(marker, i) {
+                            return function() {
+                                infowindow.setContent(obj.message['name']);
+                                infowindow.open(map, marker);
+                            }
+                        })(marker, 1));
+
+                        marker = new google.maps.Marker({
+                            position: new google.maps.LatLng(myLatitude, myLongitude),
+                            map: map
+                        });
+
+                        google.maps.event.addListener(marker, 'click', (function(marker, i) {
+                            return function() {
+                                infowindow.setContent('myLocation');
+                                infowindow.open(map, marker);
+                            }
+                        })(marker, 2));
+
+
+                        //generate google maps link
+                        var init = "https://www.google.com/maps/dir/?api=1&";
+                        var origin = "origin="+myLatitude+','+myLongitude;
+                        var destination = "destination="+obj.message['geometry']['location'].lat+','+obj.message['geometry']['location'].lng;
+                        var travelmode = 'travelmode=driving';
+                        var link = init+origin+'&'+destination+'&'+travelmode;
+                        document.getElementById('mapslink').style.display = "block";
+                        document.getElementById('mapslink_text').href = link;
+                        document.getElementById('meetingTime').style.display = "block";
+                        document.getElementById('meetingTime_text').innerHTML = getTime(obj.meeting_time);
+                        document.getElementById('depart').style.display = "block";
+                        document.getElementById('depart_text').innerHTML = getTime(obj.actual_depart_time);
+                    }
+                    else{
+                        //error handling
+                        document.getElementById('loading').style.display="none";
+                        document.getElementById('map').style.display = 'block';
+                        alert(obj.error);
+                    }
+                }
+                console.log("message received: " + e.data);
+            }
+        };
+
+        function send() {
+            var msg = document.getElementById('message').value;
+            sock.send(msg);
+        };
+
+        function createGroup(){
+            document.getElementById('createGroupForm').style.display = "block";
+            document.getElementById('createGroupButton').style.display = "none";
+            document.getElementById('joinGroupButton').style.display = "none";
+            document.getElementById('submitCGButton').style.display = "block";
+        };
+
+        function validateLatitude(latitude){
+            if(latitude == NaN){
+                return false;
+            } else if(latitude>-91 && latitude<91){
+                return true;
+            }
+            return false;
+        }
+
+        function validateLongitude(longitude){
+            if(longitude == NaN){
+                return false;
+            } else if(longitude>-181 && longitude<181){
+                return true;
+            }
+            return false;
+        }
+
+        function submitCG() {
+
+            var header = 'Header:CG';
+            var group_size = document.getElementById('CG_groupsize').value;
+            var latitude = document.getElementById('CG_lat').value;
+            var longitude = document.getElementById('CG_lng').value;
+            var depart_time = document.getElementById('CG_departure_time').value;
+            var meeting_place_type = document.getElementById('CG_meeting_place').value;
+            var msg = JSON.stringify({groupSize:group_size,lat:latitude,lng:longitude,time:depart_time,place:meeting_place_type});
+            var enter = false;
+            if((!validateLatitude(Number(latitude)) || latitude=='')){
+                console.log("validateLatitude failure");
+                //document.getElementById('CG_latitude_error').innerHTML = "!enter correct value";
+                document.getElementById('CG_lat').classList.add('error_input');
+                enter = true;
+            } 
+            if(!validateLongitude(Number(longitude)) || longitude==''){
+                console.log("validateLongitude failure");
+                //document.getElementById('CG_longitude_error').innerHTML = "!enter correct value";
+                document.getElementById('CG_lng').classList.add('error_input');
+                enter = true;
+            } 
+            if(enter){
+                return;
+            }
+            document.getElementById('CG_latitude_error').innerHTML = "";
+            document.getElementById('CG_longitude_error').innerHTML = "";
+            if(document.getElementById('CG_lat').classList.contains('error_input'))
+                document.getElementById('CG_lat').classList.remove('error_input');
+            if(document.getElementById('CG_lng').classList.contains('error_input'))
+                document.getElementById('CG_lng').classList.remove('error_input');
+            sock.send(header+' '+msg);
+            myLongitude = longitude;
+            myLatitude = latitude;
+            document.getElementById('map').style.display="none";
+            document.getElementById('loading').style.display="block";
+        };
+
+        function joinGroup(){
+            document.getElementById('joinGroupForm').style.display = "block";
+            document.getElementById('createGroupButton').style.display = "none";
+            document.getElementById('joinGroupButton').style.display = "none";
+            document.getElementById('submitJGButton').style.display = "block";
+        };
+
+        function submitJG() {
+            var header = 'Header:JG';
+            var group_id = document.getElementById('JG_id').value;
+            var latitude = document.getElementById('JG_lat').value;
+            var longitude = document.getElementById('JG_lng').value;
+            var depart_time = document.getElementById('JG_departure_time').value;
+            var enter = false;
+            if(!validateLatitude(Number(latitude)) || latitude==''){
+                console.log("validateLatitude failure");
+                //document.getElementById('JG_latitude_error').innerHTML = "!enter correct value";
+                document.getElementById('JG_lat').classList.add('error_input');
+                enter = true;
+            } 
+            if(!validateLongitude(Number(longitude)) || longitude==''){
+                console.log("validateLongitude failure");
+                //document.getElementById('JG_longitude_error').innerHTML = "!enter correct value";
+                document.getElementById('JG_lng').classList.add('error_input');
+                enter = true;
+            } 
+            if(enter){
+                return;
+            }
+            document.getElementById('JG_latitude_error').innerHTML = "";
+            document.getElementById('JG_longitude_error').innerHTML = "";
+            if(document.getElementById('JG_lat').classList.contains('error_input'))
+                document.getElementById('JG_lat').classList.remove('error_input');
+            if(document.getElementById('JG_lng').classList.contains('error_input'))
+                document.getElementById('JG_lng').classList.remove('error_input');
+            if(document.getElementById('JG_id').classList.contains('error_input'))
+                document.getElementById('JG_id').classList.remove('error_input');
+            document.getElementById('group_id_error').innerHTML = "";
+            var msg = JSON.stringify({groupID:group_id,lat:latitude,lng:longitude,time:depart_time});
+            sock.send(header+' '+msg);
+            myLongitude = longitude;
+            myLatitude = latitude;
+            document.getElementById('map').style.display="none";
+            document.getElementById('loading').style.display="block";
+        };
+    </script>
+    <style type="text/css">
+        input:invalid {
+          border: 1px dashed red;
+        }
+
+        /* Split the screen in half */
+        .split {
+          height: 100%;
+          width: 50%;
+          position: fixed;
+          z-index: 1;
+          top: 0;
+          overflow-x: hidden;
+          padding-top: 20px;
+        }
+
+        /* Control the left side */
+        .left {
+          left: 0;
+          background-color: #FFA07A;
+
+        }
+
+        /* Control the right side */
+        .right {
+          right: 0;
+        }
+
+        /* If you want the content centered horizontally and vertically */
+        .centered {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          text-align: center;
+          align-items: center;
+          justify-content: center;
+          flex-direction: column;
+          display: flex;
+          width: 100%;
+        }
+
+        .centered_normal {
+          text-align: center;
+          align-items: center;
+          justify-content: center;
+          flex-direction: column;
+          display: flex;
+          width: 100%;
+          height: 100%;
+          vertical-align: middle;
+          font-size: 20px;
+        }
+        .error{
+            color: red;
+            font-size:10px;
+        }
+        .error_input{
+            border: 1px dashed red;
+        }
+
+        .mapClass{
+            width: 1000px;
+            height: 1000px;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        form {
+            width: 60%;
+        }
+
+        /* Create two equal columns that floats next to each other */
+        .column {
+            float: left;
+            width: 50%;
+            padding: 10px;
+        }
+
+        /* Clear floats after the columns */
+        .row:after {
+            content: "";
+            display: table;
+            clear: both;
+        }
+
+        /* Responsive layout - makes the two columns stack on top of each other instead of next to each other */
+        @media screen and (max-width: 600px) {
+            .column {
+                width: 100%;
+            }
+        }
+
+        .button {
+          display: inline-block;
+          border-radius: 4px;
+          background-color: #303030;
+          border: none;
+          color: white;
+          text-align: center;
+          font-size: 14px;
+          padding: 20px;
+          width: 200px;
+          transition: all 0.5s;
+          cursor: pointer;
+          margin: 10px;
+        }
+
+        .button span {
+          cursor: pointer;
+          display: inline-block;
+          position: relative;
+          transition: 0.5s;
+        }
+
+        .button span:after {
+          content: '\00bb';
+          position: absolute;
+          opacity: 0;
+          top: 0;
+          right: -20px;
+          transition: 0.5s;
+        }
+
+        .button:hover span {
+          padding-right: 25px;
+        }
+
+        .button:hover span:after {
+          opacity: 1;
+          right: 0;
+        }
+
+        h1 {
+            font-size: 50px;
+        }
+
+        select, textarea {
+            width: 100%;
+            padding: 6px;
+            border: 2px solid #ccc;
+            border-radius: 6px;
+            resize: vertical;
+            text-align: center;
+            font-size: 15px;
+        }
+
+        input{
+            width: 100%;
+            border-radius: 6px;
+            text-align: center;
+            padding: 6px;
+        }
+    </style>
+  <script type="text/javascript">
+    $(document).ready(function() {
+      $('.required').clockTimePicker({required:true});
+    });
+  </script>
+
+<div class="split left">
+  <div class="centered_normal">
+    <h1><i>Geo-Meet</i></h1>
+    
+    <button class="button" style="vertical-align:middle;" onclick="createGroup();" id="createGroupButton"><span>Create Group</span></button>
+    <button onclick="joinGroup();" class="button" style="vertical-align:middle;" id = "joinGroupButton"><span>Join Group</span></button>
+
+    <form id = "createGroupForm" style="display:none;">
+        <p>
+            <p><div class="row box"><div class="column box" style="display:inline;"><i>GroupSize :</i></div><div class="column box"> <input id="CG_groupsize" type="number" value="2" min="2" max="15" required> <i id="CG_groupsize_text" style="display:inline;"></i></div></div></p>
+            <p><div class="row box"><div class="column box" style="display:inline;"><i>Latitude :</i></div><div class="column box"> <input id="CG_lat" type="text" required><i class="error" id="CG_latitude_error"></i> <i id="CG_latitude_text" style="display:inline;"></i></div></div></p>
+            <p><div class="row box"><div class="column box" style="display:inline;"><i>Longitude :</i></div><div class="column box"> <input id="CG_lng" type="text" required><i class="error" id="CG_longitude_error"></i> <i id="CG_longitude_text" style="display:inline;"></i></div></div></p>
+            <p><div class="row box"><div class="column box" style="display:inline;">
+                <i>Departure time:</i></div><div class="column box">
+                <input class="time required" id="CG_departure_time" type="text" value="08:45" style="display:inline;"/>
+                <i id="CG_departure_time_text" style="display:inline;"></i></div></div>
+            </p>
+            <p><div class="row box"><div class="column box" style="display:inline;">
+                <i>Meeting place type: </i></div><div class="column box">
+                <select id="CG_meeting_place" style="display:inline;">
+                  <option value="restaurant">Restaurant</option>
+                  <option value="cafe">Cafe</option>
+                  <option value="movie_theater">Movie Theater</option>
+                </select>
+                <i id="CG_meeting_place_text" style="display:inline;"></i></div></div>
+            </p>
+        </p>
+    </form>
+
+    <form id = "joinGroupForm" style="display:none;">
+        <p>
+            <p><div class="row box"><div class="column box" style="display:inline;"><i>Group id :</i></div><div class="column box" style="display:inline;"><input id="JG_id" type="number" min="1"> <i class="error" id="group_id_error"></i><i id="JG_id_text" style="display:inline;"></i></div></div></p>
+            <p><div class="row box"><div class="column box" style="display:inline;"><i>Latitude :</i></div><div class="column box"><input id="JG_lat" type="text"><i id="JG_latitude_error"></i><i id="JG_latitude_text" style="display:inline;"></i></div></div></p>
+            <p><div class="row box"><div class="column box" style="display:inline;"><i>Longitude :</i></div> <div class="column box"><input id="JG_lng" type="text"><i id="JG_longitude_error"></i><i id="JG_longitude_text" style="display:inline;"></i></div></div></p>
+            <p>
+                <div class="row box">
+                    <div class="column box" style="display:inline;">
+                        <i>Departure time:</i>
+                    </div>
+                    <div class="column box" style="display:inline;">
+                        <input class="time required" id="JG_departure_time" type="text" value="08:45"  style="display:inline;"/>
+                        <i id="JG_departure_time_text" style="display:inline;"></i>
+                    </div>
+                </div>
+            </p>
+        </p>
+    </form>
+    <button onclick="submitCG();" id = "submitCGButton" class="button" style="vertical-align:middle;display:none;"><span>Submit</span></button>
+    <button onclick="submitJG();" id = "submitJGButton" class="button" style="vertical-align:middle;display:none;"><span>Submit</span></button>
+
+
+    <p id = "groupID" style="display:none;">
+        <i>Group id :</i> <i id="groupID_text"></i>
+    </p>
+    
+    <p id = "meetingTime" style="display:none;">
+        <i>Meeting time:</i> <i id="meetingTime_text">Meeting Time</i>
+    </p>
+
+    <p id = "depart" style="display:none;">
+        <i>Depart at:</i> <i id="depart_text">Meeting Time</i>
+    </p>
+
+    <p id = "mapslink" style="display:none;">
+        <i>Google maps link:</i> <a id="mapslink_text">click here to view directions</a>
+    </p>
+</div>
+</div>
+
+<div class="split right">
+
+  <div class="centered">
+    <div id = "loading" style= "display:none;">
+    <h2>Loading</h2>
+
+    <div class="loader"></div></div>
+    <div id="map" class="mapClass"></div>
+      </div>
+</div>
+</body>
+</html>
